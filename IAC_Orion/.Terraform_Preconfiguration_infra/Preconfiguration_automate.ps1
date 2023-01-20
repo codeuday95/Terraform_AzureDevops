@@ -125,6 +125,3 @@ Set-AzKeyVaultSecret -VaultName $KeyVaultname -Name $StorageAccountName-secret -
 
 $Secret2 = ConvertTo-SecureString -String $SPSECRET -AsPlainText -Force
 Set-AzKeyVaultSecret -VaultName $KeyVaultname -Name $SPNAME-secret -SecretValue $Secret2
-
-#Set-AzKeyVaultAccessPolicy -VaultName testumesh001 -ObjectId $SPOBJID -PermissionsToSecrets all -PermissionsToKeys all -PermissionsToCertificates all
-#Set-AzKeyVaultAccessPolicy -VaultName 'testumesh001' -ServicePrincipalName '9ab7e300-e8d0-4e39-81ef-30923a23b8fb' -PermissionsToSecrets Get,Set
