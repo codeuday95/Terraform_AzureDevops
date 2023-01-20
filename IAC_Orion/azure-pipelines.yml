@@ -1,0 +1,167 @@
+# Start with an empty pipeline
+# Use the latest version of Azure Pipelines
+# Select a Windows agent to run the build
+# Use the $(Build.SourcesDirectory) variable to specify the directory that contains your source code
+# Use the PowerShell task to run the commands
+# Use the approval gate to require approval before running the second stage
+########################################################################################
+#PREREQIREMENTS
+# ALL THE PRE_REQUIRED ENV IS SETUPED FROM TERRAFORM_PRECONFIGURATION SETUP
+
+trigger:
+- master
+
+pool:
+  vmImage: 'ubuntu-22.04'
+
+variables:
+  buildConfiguration: 'Release'
+  ARM_SUBSCRIPTION_ID: $(SubscriptionId)
+  ARM_TENANT_ID: 7cc41e2c-XXX
+  ARM_CLIENT_ID: $(SpClientID)
+  ARM_CLIENT_SECRET: $(SPSECRET)
+
+stages:
+- stage: Dev_Plan_Approve_Deploy
+  dependsOn: []
+  jobs:
+  - job: Build
+  # USING CHECKOUT
+  # https://learn.microsoft.com/en-us/azure/devops/pipelines/repos/multi-repo-checkout?view=azure-devops
+    steps:
+    - checkout: git://Project Orion/IAC_Orion
+    - checkout: git://Project Orion/Buildtemplates
+    
+    - task: Bash@3
+      displayName: Terraform Plan 
+      inputs:
+        targetType: 'inline'
+        script: |
+          terraform init
+          terraform plan -var-file="Dev.tfvars"
+        workingDirectory: '$(System.DefaultWorkingDirectory)/IAC_Orion/Dev'
+# Using Approval 
+# https://learn.microsoft.com/en-us/azure/devops/pipelines/release/deploy-using-approvals?view=azure-devops
+  - job: waitForValidation
+    dependsOn:
+    - Build
+    displayName: Wait for external validation  
+    pool: server    
+    timeoutInMinutes: 60 # job times out in 60 min
+    steps:   
+    - task: ManualValidation@0
+      timeoutInMinutes: 30 # task times out in 30 min
+      inputs:
+          notifyUsers: |
+              umesh.udayXXX.comcom
+          instructions: 'Please validate the build configuration and resume'
+          onTimeout: 'resume'
+  - job: Deploy
+    displayName: Terraform Deploy
+    dependsOn:
+    - waitForValidation
+    steps:
+    - checkout: git://Project Orion/IAC_Orion
+    - checkout: git://Project Orion/Buildtemplates
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: |
+          terraform init
+          terraform apply -var-file="Dev.tfvars" -auto-approve
+        workingDirectory: '$(System.DefaultWorkingDirectory)/IAC_Orion/Dev'
+
+
+- stage: Qa_Plan_Approve_Deploy
+  dependsOn:
+    - Dev_Plan_Approve_Deploy
+  jobs:
+  - job: Build
+    steps:
+    - checkout: git://Project Orion/IAC_Orion
+    - checkout: git://Project Orion/Buildtemplates
+    
+    - task: Bash@3
+      displayName: Terraform Plan 
+      inputs:
+        targetType: 'inline'
+        script: |
+          terraform init
+          terraform plan -var-file="Qa.tfvars"
+        workingDirectory: '$(System.DefaultWorkingDirectory)/IAC_Orion/Qa'
+
+  - job: waitForValidation
+    dependsOn:
+    - Build
+    displayName: Wait for external validation  
+    pool: server    
+    timeoutInMinutes: 60 # job times out in 60 min
+    steps:   
+    - task: ManualValidation@0
+      timeoutInMinutes: 30 # task times out in 30 min
+      inputs:
+          notifyUsers: |
+              umesh.udayXXX.com
+          instructions: 'Please validate the build configuration and resume'
+          onTimeout: 'resume'
+  - job: Deploy
+    displayName: Terraform Deploy
+    dependsOn:
+    - waitForValidation
+    steps:
+    - checkout: git://Project Orion/IAC_Orion
+    - checkout: git://Project Orion/Buildtemplates
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: |
+          terraform init
+          terraform apply -var-file="Qa.tfvars" -auto-approve
+        workingDirectory: '$(System.DefaultWorkingDirectory)/IAC_Orion/Qa'
+
+- stage: Uat_Plan_Approve_Deploy
+  dependsOn:
+    - Qa_Plan_Approve_Deploy
+  jobs:
+  - job: Build
+    steps:
+    - checkout: git://Project Orion/IAC_Orion
+    - checkout: git://Project Orion/Buildtemplates
+    
+    - task: Bash@3
+      displayName: Terraform Plan 
+      inputs:
+        targetType: 'inline'
+        script: |
+          terraform init
+          terraform plan -var-file="Uat.tfvars"
+        workingDirectory: '$(System.DefaultWorkingDirectory)/IAC_Orion/Uat'
+
+  - job: waitForValidation
+    dependsOn:
+    - Build
+    displayName: Wait for external validation  
+    pool: server    
+    timeoutInMinutes: 60 # job times out in 60 min
+    steps:   
+    - task: ManualValidation@0
+      timeoutInMinutes: 30 # task times out in 30 min
+      inputs:
+          notifyUsers: |
+              umesh.udayXXX.com
+          instructions: 'Please validate the build configuration and resume'
+          onTimeout: 'resume'
+  - job: Deploy
+    displayName: Terraform Deploy
+    dependsOn:
+    - waitForValidation
+    steps:
+    - checkout: git://Project Orion/IAC_Orion
+    - checkout: git://Project Orion/Buildtemplates
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: |
+          terraform init
+          terraform apply -var-file="Uat.tfvars" -auto-approve
+        workingDirectory: '$(System.DefaultWorkingDirectory)/IAC_Orion/Uat'

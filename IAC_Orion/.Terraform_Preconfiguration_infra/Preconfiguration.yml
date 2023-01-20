@@ -1,0 +1,80 @@
+# Start with an empty pipeline
+# Use the latest version of Azure Pipelines
+# Select a Windows agent to run the build
+# Use the $(Build.SourcesDirectory) variable to specify the directory that contains your source code
+# Use the PowerShell task to run the commands
+# Use the approval gate to require approval before running the second stage
+##############################################################################################################################
+#PRE-REQUIREMENTS
+# SERVICE CONNECTION USED IN AZURE DEVOPS PIPELINE SHOULD HAVE CONTRIBUTOR ROLE AND USER-ACESS ROLE TO ASSIGN ROLES
+# A SP NEED TO BE CREATED WITH A READER ACESS TO SUPSCRIPTION 
+# This YAML will be used to setup RESOURCE GROUP & Storage Ac & Keyvault to store Stoarge ac key and SP Sercet AND ASSIGN CONTIBUTOR ROLE TO SP
+# THIS RG AND SP WILL BE USED BY EACH TERRAFORM ENV
+
+trigger:
+- master
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildConfiguration: 'Release'
+
+stages:
+- stage: Stage1
+  displayName: 'Terraform Plan'
+  jobs:
+  - job: Job1
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'VS Umesh Uday'
+        scriptType: 'ps'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          $SubscriptionID = "$(SubscriptionID)"
+          $ProjectName = "$(ProjectName)"
+          $Envrionments = @("Dev", "Qa", "Uat")
+          $Location = "$(Location)"
+          $SpName = "$(SpName)"
+          $SpSecret = "$(SpSecret)"
+          $SPAPPID = "$(SPAPPID)"
+          $PipelineSpID = "$(PipelineSpID)"
+          
+          foreach ($items in $Envrionments)
+          {
+              az account set --subscription $SubscriptionID
+          
+              $Resourcegroupname = "$ProjectName-$items-Rg"
+              $Storageaccountname = ("$ProjectName-$items-storageac").ToLower().replace("-", "")
+              $Keyvaultname = "$ProjectName-$items-Kv"
+          
+          
+              az group create --location $Location --resource-group $Resourcegroupname --tags Envrionments=$items ProjectName=$ProjectName
+              #az group delete -n $Resourcegroupname
+          
+              az storage account create --name $Storageaccountname --resource-group $Resourcegroupname -l $Location --sku Standard_LRS
+              az storage container create -n tfstate --public-access Container -g $Resourcegroupname --account-name $Storageaccountname --auth-mode login
+          
+              az Keyvault create -n $Keyvaultname -l $location --resource-group $Resourcegroupname  --sku standard --enable-rbac-authorization true
+          
+              $Resourcegroupnameid = az group show --name $Resourcegroupname --query "id" -o tsv
+              # Will be un commented if Pipline SP have acess to read 
+              #$SPAPPID = az ad sp list --display-name $SpName --query "[0].id" -o tsv
+              $keyvaultId = az keyvault show -n $Keyvaultname --query "id" -o tsv
+          
+              #To remove ""
+              #$SPAPPID = $SPAPPID.Trim('"')
+              #$keyvaultId = $keyvaultId.Trim('"')
+              #$Resourcegroupnameid = $Resourcegroupnameid.Trim('"')
+          
+          
+              az role assignment create --assignee $SPAPPID --role "Contributor" --scope $Resourcegroupnameid
+              az role assignment create --assignee $SPAPPID --role "Key Vault Secrets Officer" --scope $keyvaultId
+              az role assignment create --assignee $PipelineSpID --role "Key Vault Secrets Officer" --scope $keyvaultId
+          
+              $StorageAccountKey = az storage account keys list --resource-group $Resourcegroupname --account-name $Storageaccountname --query "[0].value" -o tsv
+          
+              az keyvault secret set --vault-name $Keyvaultname --name $SpName-Secret --value $SpSecret
+              az keyvault secret set --vault-name $Keyvaultname --name $Storageaccountname-AcessKey --value $StorageAccountKey
+          }
